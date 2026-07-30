@@ -204,8 +204,9 @@ with tab1:
     with col_a:
         st.markdown("**テクニカル指標 (最新)**")
         ind_df = pd.DataFrame({
-            "指標": ["終値", "RSI", "MACD", "MACDシグナル", "BB上限", "BB下限", "MA5", "MA25", "MA75"],
+            "指標": ["日付", "終値", "RSI", "MACD", "MACDシグナル", "BB上限", "BB下限", "MA5", "MA25", "MA75"],
             "値": [
+                latest.name.strftime("%Y-%m-%d"),
                 f"{latest['Close']:,.0f} 円",
                 f"{latest['RSI']:.1f}",
                 f"{latest['MACD']:.2f}",
