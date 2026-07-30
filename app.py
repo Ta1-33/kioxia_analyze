@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from analysis import fetch_data, compute_indicators
-from signals import combined_signal, predict_next_day
+from signals import combined_signal, predict_next_day, backtest_next_day
 
 st.set_page_config(page_title="キオクシア 株価分析", layout="wide")
 
@@ -183,7 +183,7 @@ st.plotly_chart(fig, use_container_width=True)
 # ── Signal Detail ─────────────────────────────────────────────
 st.subheader("シグナル詳細")
 
-tab1, tab2 = st.tabs(["最新のシグナル状況", "シグナル履歴"])
+tab1, tab2, tab3 = st.tabs(["最新のシグナル状況", "シグナル履歴", "翌日予想バックテスト"])
 
 with tab1:
     c1, c2, c3 = st.columns(3)
@@ -322,6 +322,73 @@ with tab2:
     hist["RSI"] = hist["RSI"].map("{:.1f}".format)
     hist["MACD"] = hist["MACD"].map("{:.2f}".format)
     st.dataframe(hist.tail(30).iloc[::-1], use_container_width=True)
+
+with tab3:
+    with st.spinner("バックテスト計算中（数十秒かかります）..."):
+        bt = backtest_next_day(df)
+
+    if bt.empty:
+        st.caption("データ不足のためバックテストを実行できません。")
+    else:
+        dir_acc = bt["correct_direction"].mean() * 100
+        mae = (bt["actual_price"] - bt["pred_price"]).abs().mean()
+        rmse = float(np.sqrt(((bt["actual_price"] - bt["pred_price"]) ** 2).mean()))
+        mean_actual = bt["actual_price"].mean()
+        mape = (bt["actual_price"] - bt["pred_price"]).abs().mean() / mean_actual * 100
+
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("方向一致率", f"{dir_acc:.1f}%", help="翌日の上昇/下落の方向が合っていた割合")
+        k2.metric("平均絶対誤差 (MAE)", f"{mae:,.0f} 円")
+        k3.metric("RMSE", f"{rmse:,.0f} 円")
+        k4.metric("MAPE", f"{mape:.2f}%", help="実際の価格に対する誤差率")
+
+        st.markdown("---")
+
+        # Actual vs Predicted price chart
+        fig_bt = go.Figure()
+        fig_bt.add_trace(go.Scatter(
+            x=bt.index, y=bt["actual_price"], name="実際の価格",
+            line=dict(color="#26a69a", width=2)
+        ))
+        fig_bt.add_trace(go.Scatter(
+            x=bt.index, y=bt["pred_price"], name="予測価格",
+            line=dict(color="#ff9800", width=1.5, dash="dash")
+        ))
+        fig_bt.update_layout(
+            title="実際の価格 vs 予測価格",
+            template="plotly_dark",
+            height=350,
+            margin=dict(l=50, r=20, t=40, b=20),
+            yaxis_title="株価 (円)",
+        )
+        st.plotly_chart(fig_bt, use_container_width=True)
+
+        # Return scatter
+        fig_sc = go.Figure()
+        colors_sc = ["#26a69a" if c else "#ef5350" for c in bt["correct_direction"]]
+        fig_sc.add_trace(go.Scatter(
+            x=bt["pred_return"], y=bt["actual_return"],
+            mode="markers",
+            marker=dict(color=colors_sc, size=5, opacity=0.7),
+            name="予測 vs 実際リターン",
+        ))
+        max_r = max(bt["pred_return"].abs().max(), bt["actual_return"].abs().max()) * 1.1
+        fig_sc.add_shape(type="line", x0=-max_r, y0=-max_r, x1=max_r, y1=max_r,
+                         line=dict(color="gray", dash="dot"))
+        fig_sc.update_layout(
+            title="予測リターン vs 実際リターン（緑=方向一致、赤=不一致）",
+            template="plotly_dark",
+            height=350,
+            margin=dict(l=50, r=20, t=40, b=20),
+            xaxis_title="予測リターン (%)",
+            yaxis_title="実際リターン (%)",
+        )
+        st.plotly_chart(fig_sc, use_container_width=True)
+
+        st.caption(
+            f"バックテスト期間: {bt.index[0].strftime('%Y-%m-%d')} 〜 {bt.index[-1].strftime('%Y-%m-%d')} "
+            f"({len(bt)}営業日) ／ 21営業日ごとに再学習するwalk-forward方式"
+        )
 
 # ── Disclaimer ────────────────────────────────────────────────
 st.markdown("---")

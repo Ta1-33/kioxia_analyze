@@ -132,6 +132,55 @@ def predict_next_day(df: pd.DataFrame):
     }
 
 
+def backtest_next_day(df: pd.DataFrame, retrain_interval: int = 21):
+    """Walk-forward backtest for next-day price prediction.
+    Retrains every `retrain_interval` days. Returns a DataFrame with
+    columns: actual_price, pred_price, actual_return, pred_return, correct_direction.
+    """
+    feats = _build_features(df)
+    fwd_ret = df["Close"].pct_change(1).shift(-1)
+    data = pd.concat([feats, fwd_ret.rename("fwd")], axis=1).dropna()
+
+    min_train = int(len(data) * 0.6)
+    if min_train < 30:
+        return pd.DataFrame()
+
+    records = []
+    model = None
+    scaler = None
+
+    for i in range(min_train, len(data) - 1):
+        # Retrain periodically
+        if model is None or (i - min_train) % retrain_interval == 0:
+            X_tr = data.drop(columns="fwd").iloc[:i]
+            y_tr = data["fwd"].iloc[:i]
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X_tr)
+            model = RandomForestRegressor(n_estimators=100, max_depth=5, random_state=42)
+            model.fit(X_scaled, y_tr)
+
+        X_pred = scaler.transform(data.drop(columns="fwd").iloc[[i]])
+        pred_ret = float(model.predict(X_pred)[0])
+
+        date = data.index[i]
+        actual_ret = float(data["fwd"].iloc[i])
+        actual_price = float(df.loc[date, "Close"])
+        pred_price = actual_price * (1 + pred_ret)
+        next_actual_price = float(df["Close"].iloc[df.index.get_loc(date) + 1])
+
+        records.append({
+            "date": date,
+            "actual_price": next_actual_price,
+            "pred_price": pred_price,
+            "actual_return": actual_ret * 100,
+            "pred_return": pred_ret * 100,
+            "correct_direction": (pred_ret > 0) == (actual_ret > 0),
+        })
+
+    result = pd.DataFrame(records).set_index("date")
+    return result
+
+
 def combined_signal(df: pd.DataFrame):
     """Returns rule, ml, combined signals and ML accuracy."""
     rule = rule_based_signal(df)
