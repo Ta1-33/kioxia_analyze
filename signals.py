@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.preprocessing import StandardScaler
 
 
@@ -56,7 +56,7 @@ def _build_features(df: pd.DataFrame) -> pd.DataFrame:
     return feats
 
 
-def ml_signal(df: pd.DataFrame) -> tuple[pd.Series, RandomForestClassifier, float]:
+def ml_signal(df: pd.DataFrame):
     """Train on historical data, return per-day prediction (+1/0/-1) and OOS accuracy."""
     feats = _build_features(df)
 
@@ -89,7 +89,50 @@ def ml_signal(df: pd.DataFrame) -> tuple[pd.Series, RandomForestClassifier, floa
     return full, model, acc
 
 
-def combined_signal(df: pd.DataFrame) -> tuple[pd.Series, pd.Series, pd.Series, float]:
+def predict_next_day(df: pd.DataFrame):
+    """Predict next day's price using RandomForestRegressor.
+    Returns dict with pred_price, pred_high, pred_low, pred_return, pred_std, or None if insufficient data.
+    """
+    feats = _build_features(df)
+    fwd_ret = df["Close"].pct_change(1).shift(-1)
+
+    data = pd.concat([feats, fwd_ret.rename("fwd")], axis=1).dropna()
+    X = data.drop(columns="fwd")
+    y = data["fwd"]
+
+    split = int(len(X) * 0.7)
+    if split < 30:
+        return None
+
+    scaler = StandardScaler()
+    X_tr = scaler.fit_transform(X.iloc[:split])
+
+    model = RandomForestRegressor(n_estimators=300, max_depth=5, random_state=42)
+    model.fit(X_tr, y.iloc[:split])
+
+    latest_feats = feats.iloc[[-1]]
+    if latest_feats.isnull().any(axis=1).iloc[0]:
+        return None
+
+    X_pred = scaler.transform(latest_feats)
+
+    # Use individual tree predictions for confidence interval
+    tree_preds = np.array([tree.predict(X_pred)[0] for tree in model.estimators_])
+    pred_return = float(tree_preds.mean())
+    pred_std = float(tree_preds.std())
+
+    current_price = float(df["Close"].iloc[-1])
+    return {
+        "pred_return": pred_return,
+        "pred_price": current_price * (1 + pred_return),
+        "pred_high": current_price * (1 + pred_return + pred_std),
+        "pred_low": current_price * (1 + pred_return - pred_std),
+        "pred_std": pred_std,
+        "current_price": current_price,
+    }
+
+
+def combined_signal(df: pd.DataFrame):
     """Returns rule, ml, combined signals and ML accuracy."""
     rule = rule_based_signal(df)
     ml, _, acc = ml_signal(df)

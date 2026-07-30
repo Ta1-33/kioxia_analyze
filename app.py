@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from analysis import fetch_data, compute_indicators
-from signals import combined_signal
+from signals import combined_signal, predict_next_day
 
 st.set_page_config(page_title="キオクシア 株価分析", layout="wide")
 
@@ -71,6 +71,7 @@ with st.spinner("データ取得中..."):
     df["signal_rule"] = rule_sig
     df["signal_ml"] = ml_sig
     df["signal"] = combined_sig
+    next_day = predict_next_day(df)
 
 # ── KPI Row ──────────────────────────────────────────────────
 latest = df.iloc[-1]
@@ -239,6 +240,33 @@ with tab1:
 | ボリンジャー | 下限タッチ | 上限タッチ |
 | AI | 5日後+2%超を予測 | 5日後-2%超を予測 |
         """)
+
+st.subheader("翌日予想")
+if next_day:
+    nd_price = next_day["pred_price"]
+    nd_high = next_day["pred_high"]
+    nd_low = next_day["pred_low"]
+    nd_ret = next_day["pred_return"] * 100
+    cur = next_day["current_price"]
+
+    direction = "上昇" if nd_ret > 0.3 else "下落" if nd_ret < -0.3 else "横ばい"
+    dir_color = "green" if nd_ret > 0.3 else "red" if nd_ret < -0.3 else "gray"
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("翌日予想価格", f"{nd_price:,.0f} 円", f"{nd_ret:+.2f}%")
+    c2.metric("予想レンジ 上限", f"{nd_high:,.0f} 円", f"{(nd_high/cur-1)*100:+.1f}%")
+    c3.metric("予想レンジ 下限", f"{nd_low:,.0f} 円", f"{(nd_low/cur-1)*100:+.1f}%")
+    c4.metric("予想方向", direction)
+
+    st.caption(
+        f"AIが過去データから学習した翌日終値の予測です。"
+        f"予想レンジは各決定木の予測のばらつき（±1σ）を示します。"
+        f"投資判断の参考情報としてのみご利用ください。"
+    )
+else:
+    st.caption("データ不足のため翌日予想を表示できません。")
+
+st.markdown("---")
 
 st.subheader("買い目標価格")
 
