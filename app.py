@@ -53,6 +53,14 @@ with st.sidebar:
     show_bb = st.checkbox("ボリンジャーバンド", value=True)
     show_volume = st.checkbox("出来高", value=True)
     st.markdown("---")
+    st.markdown("**買い目標 割合設定**")
+    target_pcts = st.multiselect(
+        "目標上昇率",
+        options=[3, 5, 10, 15, 20, 30],
+        default=[5, 10, 20],
+        format_func=lambda x: f"+{x}%",
+    )
+    st.markdown("---")
     st.caption("データ: Yahoo Finance (yfinance)")
 
 # ── Data ─────────────────────────────────────────────────────
@@ -231,6 +239,49 @@ with tab1:
 | ボリンジャー | 下限タッチ | 上限タッチ |
 | AI | 5日後+2%超を予測 | 5日後-2%超を予測 |
         """)
+
+st.subheader("買い目標価格")
+
+current_price = latest["Close"]
+high_3m = df["High"].iloc[-65:].max()
+high_52w = df["High"].max()
+
+col_t, col_p = st.columns(2)
+
+with col_t:
+    st.markdown("**テクニカル目標**")
+    tech_df = pd.DataFrame({
+        "目標": ["MA25（中期）", "MA75（長期）", "BB上限", "直近3ヶ月高値", "52週高値"],
+        "価格": [
+            f"{latest['MA25']:,.0f} 円",
+            f"{latest['MA75']:,.0f} 円",
+            f"{latest['BB_upper']:,.0f} 円",
+            f"{high_3m:,.0f} 円",
+            f"{high_52w:,.0f} 円",
+        ],
+        "現在値比": [
+            f"{(latest['MA25'] / current_price - 1) * 100:+.1f}%",
+            f"{(latest['MA75'] / current_price - 1) * 100:+.1f}%",
+            f"{(latest['BB_upper'] / current_price - 1) * 100:+.1f}%",
+            f"{(high_3m / current_price - 1) * 100:+.1f}%",
+            f"{(high_52w / current_price - 1) * 100:+.1f}%",
+        ],
+    })
+    st.dataframe(tech_df, hide_index=True, use_container_width=True)
+
+with col_p:
+    st.markdown("**割合目標**")
+    if target_pcts:
+        pct_df = pd.DataFrame({
+            "目標上昇率": [f"+{p}%" for p in target_pcts],
+            "目標価格": [f"{current_price * (1 + p / 100):,.0f} 円" for p in target_pcts],
+            "差額": [f"+{current_price * p / 100:,.0f} 円" for p in target_pcts],
+        })
+        st.dataframe(pct_df, hide_index=True, use_container_width=True)
+    else:
+        st.caption("サイドバーで目標上昇率を選択してください")
+
+st.markdown("---")
 
 with tab2:
     hist = df[df["signal"] != 0][["Close", "signal_rule", "signal_ml", "signal", "RSI", "MACD"]].copy()
