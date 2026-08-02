@@ -70,7 +70,7 @@ with st.sidebar:
 with st.spinner("データ取得中..."):
     raw = fetch_data("2y")
     df = compute_indicators(raw)
-    rule_sig, ml_sig, combined_sig, ml_acc = combined_signal(df)
+    rule_sig, ml_sig, combined_sig, ml_acc, feat_imp = combined_signal(df)
     df["signal_rule"] = rule_sig
     df["signal_ml"] = ml_sig
     df["signal"] = combined_sig
@@ -254,6 +254,74 @@ with tab1:
 | ボリンジャー | 下限タッチ | 上限タッチ |
 | AI | 5日後+2%超を予測 | 5日後-2%超を予測 |
         """)
+
+    # AI feature importance & tendency
+    if not feat_imp.empty:
+        st.markdown("---")
+        st.markdown("**AI が重視している指標（Feature Importance）**")
+
+        label_map = {
+            "rsi": "RSI",
+            "macd_diff": "MACD差分",
+            "bb_pos": "BB位置",
+            "ma5_25": "MA5/MA25比",
+            "ma25_75": "MA25/MA75比",
+            "vol_ratio": "出来高比率",
+            "ret_1": "1日前リターン",
+            "ret_2": "2日前リターン",
+            "ret_3": "3日前リターン",
+            "ret_5": "5日前リターン",
+            "rsi_lag1": "RSI(前日)",
+            "macd_hist": "MACDヒスト",
+        }
+        imp_sorted = feat_imp.sort_values(ascending=True)
+        imp_labels = [label_map.get(k, k) for k in imp_sorted.index]
+
+        fig_imp = go.Figure(go.Bar(
+            x=imp_sorted.values * 100,
+            y=imp_labels,
+            orientation="h",
+            marker_color="#2196f3",
+        ))
+        fig_imp.update_layout(
+            template="plotly_dark",
+            height=320,
+            margin=dict(l=10, r=20, t=10, b=20),
+            xaxis_title="重要度 (%)",
+        )
+        st.plotly_chart(fig_imp, use_container_width=True)
+
+        # Buy vs Sell tendencies
+        df_sig = df[["RSI", "MACD", "MACD_hist", "Return"]].copy()
+        df_sig["ml_signal"] = ml_sig
+        buy_avg = df_sig[df_sig["ml_signal"] == 1].mean()
+        sell_avg = df_sig[df_sig["ml_signal"] == -1].mean()
+        hold_avg = df_sig[df_sig["ml_signal"] == 0].mean()
+
+        tend_df = pd.DataFrame({
+            "指標": ["RSI", "MACD", "MACDヒスト", "直近リターン(%)"],
+            "買いシグナル時": [
+                f"{buy_avg['RSI']:.1f}",
+                f"{buy_avg['MACD']:.1f}",
+                f"{buy_avg['MACD_hist']:.1f}",
+                f"{buy_avg['Return']*100:.2f}%",
+            ],
+            "様子見時": [
+                f"{hold_avg['RSI']:.1f}",
+                f"{hold_avg['MACD']:.1f}",
+                f"{hold_avg['MACD_hist']:.1f}",
+                f"{hold_avg['Return']*100:.2f}%",
+            ],
+            "売りシグナル時": [
+                f"{sell_avg['RSI']:.1f}",
+                f"{sell_avg['MACD']:.1f}",
+                f"{sell_avg['MACD_hist']:.1f}",
+                f"{sell_avg['Return']*100:.2f}%",
+            ],
+        })
+        st.markdown("**シグナル別の指標平均値（AIの傾向）**")
+        st.dataframe(tend_df, hide_index=True, use_container_width=True)
+        st.caption("AIが買い/売りを出したときに各指標がどんな水準だったかの平均値")
 
 st.subheader("翌日予想")
 if next_day:

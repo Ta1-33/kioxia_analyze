@@ -71,7 +71,7 @@ def ml_signal(df: pd.DataFrame):
     # Walk-forward: train on first 70%, evaluate rest
     split = int(len(X) * 0.7)
     if split < 50:
-        return pd.Series(0, index=df.index), None, 0.0
+        return pd.Series(0, index=df.index), None, 0.0, pd.Series(dtype=float)
 
     scaler = StandardScaler()
     X_tr = scaler.fit_transform(X.iloc[:split])
@@ -86,7 +86,9 @@ def ml_signal(df: pd.DataFrame):
     X_all = scaler.transform(X)
     preds = pd.Series(model.predict(X_all), index=data.index)
     full = preds.reindex(df.index).fillna(0).astype(int)
-    return full, model, acc
+
+    importance = pd.Series(model.feature_importances_, index=X.columns)
+    return full, model, acc, importance
 
 
 def predict_next_day(df: pd.DataFrame):
@@ -187,7 +189,7 @@ def backtest_signals(df: pd.DataFrame) -> dict:
     Returns dict with equity curve DataFrame and summary metrics.
     """
     rule = rule_based_signal(df)
-    ml, _, _ = ml_signal(df)
+    ml, _, _, _ = ml_signal(df)
 
     score = rule + ml
     sig = pd.Series(0, index=df.index)
@@ -261,9 +263,9 @@ def backtest_signals(df: pd.DataFrame) -> dict:
 
 
 def combined_signal(df: pd.DataFrame):
-    """Returns rule, ml, combined signals and ML accuracy."""
+    """Returns rule, ml, combined signals, ML accuracy, and feature importances."""
     rule = rule_based_signal(df)
-    ml, _, acc = ml_signal(df)
+    ml, _, acc, importance = ml_signal(df)
 
     # Combine: agree → strong signal, else weight
     score = rule + ml
@@ -274,4 +276,4 @@ def combined_signal(df: pd.DataFrame):
     combined[(score == 1) & (ml == 1)] = 1
     combined[(score == -1) & (ml == -1)] = -1
 
-    return rule, ml, combined, acc
+    return rule, ml, combined, acc, importance
