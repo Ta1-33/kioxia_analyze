@@ -39,11 +39,14 @@ st.title("キオクシア (285A.T) 銘柄分析ダッシュボード")
 # ── Sidebar ──────────────────────────────────────────────────
 with st.sidebar:
     st.header("設定")
-    period = st.selectbox(
-        "取得期間",
-        options=["6mo", "1y", "2y", "3y"],
-        index=2,
-        format_func=lambda x: {"6mo": "6ヶ月", "1y": "1年", "2y": "2年", "3y": "3年"}[x],
+    view_period = st.selectbox(
+        "チャート表示期間",
+        options=["1w", "1mo", "3mo", "6mo", "1y", "2y"],
+        index=3,
+        format_func=lambda x: {
+            "1w": "1週間", "1mo": "1ヶ月", "3mo": "3ヶ月",
+            "6mo": "6ヶ月", "1y": "1年", "2y": "2年（全期間）",
+        }[x],
     )
     show_ma = st.multiselect(
         "移動平均線",
@@ -65,7 +68,7 @@ with st.sidebar:
 
 # ── Data ─────────────────────────────────────────────────────
 with st.spinner("データ取得中..."):
-    raw = fetch_data(period)
+    raw = fetch_data("2y")
     df = compute_indicators(raw)
     rule_sig, ml_sig, combined_sig, ml_acc = combined_signal(df)
     df["signal_rule"] = rule_sig
@@ -166,12 +169,17 @@ if show_volume:
     fig.add_trace(go.Scatter(x=df.index, y=df["Vol_MA20"], name="出来高MA20",
                              line=dict(color="orange", width=1)), row=3, col=1)
 
+view_days = {"1w": 7, "1mo": 31, "3mo": 93, "6mo": 186, "1y": 365, "2y": 730}
+chart_end = df.index[-1] + pd.Timedelta(days=2)
+chart_start = df.index[-1] - pd.Timedelta(days=view_days[view_period])
+
 fig.update_layout(
     height=750,
     xaxis_rangeslider_visible=False,
     template="plotly_dark",
     legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1),
     margin=dict(l=50, r=20, t=30, b=20),
+    xaxis=dict(range=[chart_start, chart_end]),
 )
 fig.update_yaxes(title_text="株価 (円)", row=1, col=1)
 fig.update_yaxes(title_text="RSI / MACD", row=2, col=1)
