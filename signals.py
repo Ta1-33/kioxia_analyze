@@ -181,6 +181,85 @@ def backtest_next_day(df: pd.DataFrame, retrain_interval: int = 21):
     return result
 
 
+def backtest_signals(df: pd.DataFrame) -> dict:
+    """Simulate long-only strategy based on combined signals.
+    Buy at close on buy signal, sell at close on sell signal.
+    Returns dict with equity curve DataFrame and summary metrics.
+    """
+    rule = rule_based_signal(df)
+    ml, _, _ = ml_signal(df)
+
+    score = rule + ml
+    sig = pd.Series(0, index=df.index)
+    sig[score >= 2] = 1
+    sig[score <= -2] = -1
+    sig[(score == 1) & (ml == 1)] = 1
+    sig[(score == -1) & (ml == -1)] = -1
+
+    close = df["Close"]
+    daily_ret = close.pct_change().fillna(0)
+
+    # Simulate: position=1 (holding) or 0 (cash)
+    position = pd.Series(0.0, index=df.index)
+    in_trade = False
+    trade_returns = []
+    trade_start_price = None
+
+    for i in range(len(df)):
+        s = sig.iloc[i]
+        if not in_trade and s == 1:
+            in_trade = True
+            trade_start_price = close.iloc[i]
+        elif in_trade and s == -1:
+            in_trade = False
+            trade_ret = close.iloc[i] / trade_start_price - 1
+            trade_returns.append(trade_ret)
+            trade_start_price = None
+        position.iloc[i] = 1.0 if in_trade else 0.0
+
+    # Close open trade at end
+    if in_trade:
+        trade_ret = close.iloc[-1] / trade_start_price - 1
+        trade_returns.append(trade_ret)
+
+    strategy_ret = (position.shift(1).fillna(0) * daily_ret)
+    bh_ret = daily_ret
+
+    equity_strategy = (1 + strategy_ret).cumprod()
+    equity_bh = (1 + bh_ret).cumprod()
+
+    equity = pd.DataFrame({
+        "シグナル戦略": equity_strategy,
+        "買い持ち": equity_bh,
+    }, index=df.index)
+
+    # Max drawdown
+    roll_max = equity_strategy.cummax()
+    drawdown = (equity_strategy - roll_max) / roll_max
+    max_dd = float(drawdown.min())
+
+    # Sharpe (annualized, 252 trading days)
+    excess = strategy_ret - bh_ret * 0
+    sharpe = float(excess.mean() / excess.std() * np.sqrt(252)) if excess.std() > 0 else 0.0
+
+    n_trades = len(trade_returns)
+    win_rate = sum(1 for r in trade_returns if r > 0) / n_trades if n_trades > 0 else 0.0
+    total_ret = float(equity_strategy.iloc[-1] - 1)
+    bh_total = float(equity_bh.iloc[-1] - 1)
+
+    return {
+        "equity": equity,
+        "position": position,
+        "total_ret": total_ret,
+        "bh_total": bh_total,
+        "n_trades": n_trades,
+        "win_rate": win_rate,
+        "max_dd": max_dd,
+        "sharpe": sharpe,
+        "trade_returns": trade_returns,
+    }
+
+
 def combined_signal(df: pd.DataFrame):
     """Returns rule, ml, combined signals and ML accuracy."""
     rule = rule_based_signal(df)

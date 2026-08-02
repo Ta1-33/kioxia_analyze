@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from analysis import fetch_data, compute_indicators
-from signals import combined_signal, predict_next_day, backtest_next_day
+from signals import combined_signal, predict_next_day, backtest_next_day, backtest_signals
 
 st.set_page_config(page_title="キオクシア 株価分析", layout="wide")
 
@@ -79,17 +79,23 @@ with st.spinner("データ取得中..."):
 # ── KPI Row ──────────────────────────────────────────────────
 latest = df.iloc[-1]
 prev = df.iloc[-2]
-price_chg = (latest["Close"] - prev["Close"]) / prev["Close"] * 100
-week_chg = (latest["Close"] - df.iloc[-6]["Close"]) / df.iloc[-6]["Close"] * 100
-month_chg = (latest["Close"] - df.iloc[-22]["Close"]) / df.iloc[-22]["Close"] * 100
+price_chg_yen = latest["Close"] - prev["Close"]
+price_chg_pct = price_chg_yen / prev["Close"] * 100
+week_base = df.iloc[-6]["Close"]
+week_chg_yen = latest["Close"] - week_base
+week_chg_pct = week_chg_yen / week_base * 100
+month_base = df.iloc[-22]["Close"]
+month_chg_yen = latest["Close"] - month_base
+month_chg_pct = month_chg_yen / month_base * 100
 
 sig_map = {1: ("🟢 買い", "green"), -1: ("🔴 売り", "red"), 0: ("⚪ 様子見", "gray")}
 sig_label, sig_color = sig_map[int(latest["signal"])]
 
 col1, col2, col3, col4, col5, col6 = st.columns(6)
-col1.metric("現在値 (円)", f"{latest['Close']:,.0f}", f"{price_chg:+.2f}%")
-col2.metric("週間変化", f"{week_chg:+.2f}%")
-col3.metric("月間変化", f"{month_chg:+.2f}%")
+col1.metric("現在値 (円)", f"{latest['Close']:,.0f}",
+            f"{price_chg_yen:+,.0f}円 ({price_chg_pct:+.2f}%)")
+col2.metric("週間変化", f"{week_chg_yen:+,.0f}円", f"{week_chg_pct:+.2f}%")
+col3.metric("月間変化", f"{month_chg_yen:+,.0f}円", f"{month_chg_pct:+.2f}%")
 col4.metric("RSI", f"{latest['RSI']:.1f}")
 col5.metric("ML精度", f"{ml_acc*100:.1f}%")
 col6.metric("総合シグナル", sig_label)
@@ -191,7 +197,7 @@ st.plotly_chart(fig, use_container_width=True)
 # ── Signal Detail ─────────────────────────────────────────────
 st.subheader("シグナル詳細")
 
-tab1, tab2, tab3 = st.tabs(["最新のシグナル状況", "シグナル履歴", "翌日予想バックテスト"])
+tab1, tab2, tab3, tab4 = st.tabs(["最新のシグナル状況", "シグナル履歴", "翌日予想バックテスト", "シグナルバックテスト"])
 
 with tab1:
     c1, c2, c3 = st.columns(3)
@@ -397,6 +403,66 @@ with tab3:
             f"バックテスト期間: {bt.index[0].strftime('%Y-%m-%d')} 〜 {bt.index[-1].strftime('%Y-%m-%d')} "
             f"({len(bt)}営業日) ／ 21営業日ごとに再学習するwalk-forward方式"
         )
+
+with tab4:
+    with st.spinner("シグナルバックテスト計算中..."):
+        bt_sig = backtest_signals(df)
+
+    equity = bt_sig["equity"]
+    k1, k2, k3, k4, k5 = st.columns(5)
+    k1.metric("戦略累積リターン", f"{bt_sig['total_ret']*100:+.1f}%")
+    k2.metric("買い持ち累積リターン", f"{bt_sig['bh_total']*100:+.1f}%")
+    k3.metric("取引回数", f"{bt_sig['n_trades']}回")
+    k4.metric("勝率", f"{bt_sig['win_rate']*100:.1f}%")
+    k5.metric("最大ドローダウン", f"{bt_sig['max_dd']*100:.1f}%")
+
+    # Equity curve
+    fig_eq = go.Figure()
+    fig_eq.add_trace(go.Scatter(
+        x=equity.index, y=(equity["シグナル戦略"] - 1) * 100,
+        name="シグナル戦略", line=dict(color="#ff9800", width=2)
+    ))
+    fig_eq.add_trace(go.Scatter(
+        x=equity.index, y=(equity["買い持ち"] - 1) * 100,
+        name="買い持ち", line=dict(color="#26a69a", width=1.5, dash="dash")
+    ))
+    # Mark buy/sell points on equity curve
+    buy_pts = df[df["signal"] == 1]
+    sell_pts = df[df["signal"] == -1]
+    eq_buy = equity["シグナル戦略"].reindex(buy_pts.index).dropna()
+    eq_sell = equity["シグナル戦略"].reindex(sell_pts.index).dropna()
+    fig_eq.add_trace(go.Scatter(
+        x=eq_buy.index, y=(eq_buy - 1) * 100, mode="markers", name="買いシグナル",
+        marker=dict(symbol="triangle-up", size=9, color="lime", line=dict(color="green", width=1))
+    ))
+    fig_eq.add_trace(go.Scatter(
+        x=eq_sell.index, y=(eq_sell - 1) * 100, mode="markers", name="売りシグナル",
+        marker=dict(symbol="triangle-down", size=9, color="red", line=dict(color="darkred", width=1))
+    ))
+    fig_eq.add_hline(y=0, line_dash="dot", line_color="gray", opacity=0.5)
+    fig_eq.update_layout(
+        title="累積リターン推移: シグナル戦略 vs 買い持ち",
+        template="plotly_dark",
+        height=400,
+        margin=dict(l=50, r=20, t=40, b=20),
+        yaxis_title="累積リターン (%)",
+    )
+    st.plotly_chart(fig_eq, use_container_width=True)
+
+    # Trade list
+    if bt_sig["trade_returns"]:
+        st.markdown("**取引別リターン**")
+        tr_df = pd.DataFrame({
+            "取引": [f"#{i+1}" for i in range(len(bt_sig["trade_returns"]))],
+            "リターン": [f"{r*100:+.2f}%" for r in bt_sig["trade_returns"]],
+            "結果": ["勝" if r > 0 else "負" for r in bt_sig["trade_returns"]],
+        })
+        st.dataframe(tr_df, hide_index=True, use_container_width=True)
+
+    st.caption(
+        "シグナル戦略: 買いシグナルで買い・売りシグナルで売り（ロングオンリー、手数料なし）。"
+        "過去のパフォーマンスは将来を保証しません。"
+    )
 
 # ── Disclaimer ────────────────────────────────────────────────
 st.markdown("---")
