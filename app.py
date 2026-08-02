@@ -205,21 +205,21 @@ with tab1:
         st.markdown("### ルールベース")
         rb = int(latest["signal_rule"])
         label, color = sig_map[rb]
-        st.markdown(f"<h2 style='color:{color}'>{label}</h2>", unsafe_allow_html=True)
+        st.markdown(f"<p style='color:{color};font-size:1.6rem;font-weight:bold;white-space:nowrap'>{label}</p>", unsafe_allow_html=True)
         st.caption("ゴールデンクロス・RSI・MACD・ボリンジャーバンドの組み合わせ")
 
     with c2:
         st.markdown("### AI (Random Forest)")
         ml = int(latest["signal_ml"])
         label, color = sig_map[ml]
-        st.markdown(f"<h2 style='color:{color}'>{label}</h2>", unsafe_allow_html=True)
+        st.markdown(f"<p style='color:{color};font-size:1.6rem;font-weight:bold;white-space:nowrap'>{label}</p>", unsafe_allow_html=True)
         st.caption(f"過去データで学習した機械学習モデル (OOS精度: {ml_acc*100:.1f}%)")
 
     with c3:
         st.markdown("### 総合判定")
         cs = int(latest["signal"])
         label, color = sig_map[cs]
-        st.markdown(f"<h2 style='color:{color}'>{label}</h2>", unsafe_allow_html=True)
+        st.markdown(f"<p style='color:{color};font-size:1.6rem;font-weight:bold;white-space:nowrap'>{label}</p>", unsafe_allow_html=True)
         st.caption("ルールベース + AI の合議")
 
     st.markdown("---")
