@@ -6,6 +6,23 @@ import numpy as np
 TICKER = "285A.T"
 
 
+def fetch_intraday() -> pd.DataFrame:
+    """Fetch hourly data for the most recent trading day."""
+    df = yf.download(TICKER, period="5d", interval="1h", auto_adjust=True, progress=False)
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    df = df.dropna()
+    if df.empty:
+        return df
+    # Filter to the most recent trading day (by date)
+    last_date = df.index.normalize().max()
+    df = df[df.index.normalize() == last_date]
+    # Convert to Japan time if timezone-aware
+    if df.index.tzinfo is not None:
+        df.index = df.index.tz_convert("Asia/Tokyo")
+    return df
+
+
 def fetch_data(period: str = "2y") -> pd.DataFrame:
     df = yf.download(TICKER, period=period, auto_adjust=True, progress=False)
     if isinstance(df.columns, pd.MultiIndex):

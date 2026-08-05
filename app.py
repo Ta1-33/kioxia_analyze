@@ -5,7 +5,7 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from analysis import fetch_data, compute_indicators
+from analysis import fetch_data, compute_indicators, fetch_intraday
 from signals import combined_signal, predict_next_day, backtest_next_day, backtest_signals
 
 st.set_page_config(page_title="キオクシア 株価分析", layout="wide")
@@ -105,96 +105,146 @@ col6.metric("総合シグナル", sig_label)
 st.markdown("---")
 
 # ── Main Chart ────────────────────────────────────────────────
-rows = 3 if show_volume else 2
-row_heights = [0.55, 0.22, 0.23] if show_volume else [0.65, 0.35]
-subplot_titles = ["ローソク足 + テクニカル", "RSI / MACD"] + (["出来高"] if show_volume else [])
+if view_period == "1d":
+    # Intraday (hourly) chart
+    with st.spinner("時間足データ取得中..."):
+        intra = fetch_intraday()
 
-fig = make_subplots(
-    rows=rows, cols=1,
-    shared_xaxes=True,
-    row_heights=row_heights,
-    vertical_spacing=0.03,
-    subplot_titles=subplot_titles,
-)
+    if intra.empty:
+        st.warning("本日の時間足データを取得できませんでした（市場閉場中の可能性があります）。")
+    else:
+        trade_date = intra.index[0].strftime("%Y-%m-%d")
+        intra_rows = 2 if show_volume else 1
+        intra_heights = [0.65, 0.35] if show_volume else [1.0]
+        intra_titles = [f"時間足チャート ({trade_date})"] + (["出来高"] if show_volume else [])
 
-# Candlestick
-fig.add_trace(go.Candlestick(
-    x=df.index, open=df["Open"], high=df["High"],
-    low=df["Low"], close=df["Close"],
-    name="ローソク足",
-    increasing_line_color="#26a69a",
-    decreasing_line_color="#ef5350",
-), row=1, col=1)
+        fig = make_subplots(
+            rows=intra_rows, cols=1,
+            shared_xaxes=True,
+            row_heights=intra_heights,
+            vertical_spacing=0.03,
+            subplot_titles=intra_titles,
+        )
+        fig.add_trace(go.Candlestick(
+            x=intra.index, open=intra["Open"], high=intra["High"],
+            low=intra["Low"], close=intra["Close"],
+            name="時間足",
+            increasing_line_color="#26a69a",
+            decreasing_line_color="#ef5350",
+        ), row=1, col=1)
 
-# Moving averages
-ma_colors = {"MA5": "#ff9800", "MA25": "#2196f3", "MA75": "#9c27b0"}
-for ma in show_ma:
-    fig.add_trace(go.Scatter(x=df.index, y=df[ma], name=ma,
-                             line=dict(color=ma_colors[ma], width=1.2)), row=1, col=1)
+        if show_volume:
+            vol_colors = ["#26a69a" if c >= o else "#ef5350"
+                          for c, o in zip(intra["Close"], intra["Open"])]
+            fig.add_trace(go.Bar(x=intra.index, y=intra["Volume"],
+                                 name="出来高", marker_color=vol_colors, opacity=0.7), row=2, col=1)
 
-# Bollinger Bands
-if show_bb:
-    fig.add_trace(go.Scatter(x=df.index, y=df["BB_upper"], name="BB上限",
-                             line=dict(color="rgba(150,150,150,0.6)", width=1, dash="dot"),
-                             showlegend=True), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df["BB_lower"], name="BB下限",
-                             line=dict(color="rgba(150,150,150,0.6)", width=1, dash="dot"),
-                             fill="tonexty", fillcolor="rgba(150,150,150,0.05)",
-                             showlegend=True), row=1, col=1)
+        fig.update_layout(
+            height=500,
+            xaxis_rangeslider_visible=False,
+            template="plotly_dark",
+            legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1),
+            margin=dict(l=50, r=20, t=30, b=20),
+        )
+        fig.update_yaxes(title_text="株価 (円)", row=1, col=1)
+        if show_volume:
+            fig.update_yaxes(title_text="出来高", row=2, col=1)
 
-# Buy/Sell signals on chart
-buy_days = df[df["signal"] == 1]
-sell_days = df[df["signal"] == -1]
-fig.add_trace(go.Scatter(
-    x=buy_days.index, y=buy_days["Low"] * 0.985,
-    mode="markers", name="買いシグナル",
-    marker=dict(symbol="triangle-up", size=10, color="lime", line=dict(color="green", width=1)),
-), row=1, col=1)
-fig.add_trace(go.Scatter(
-    x=sell_days.index, y=sell_days["High"] * 1.015,
-    mode="markers", name="売りシグナル",
-    marker=dict(symbol="triangle-down", size=10, color="red", line=dict(color="darkred", width=1)),
-), row=1, col=1)
+        # Summary stats
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("始値", f"{intra['Open'].iloc[0]:,.0f}円")
+        c2.metric("高値", f"{intra['High'].max():,.0f}円")
+        c3.metric("安値", f"{intra['Low'].min():,.0f}円")
+        c4.metric("現在値", f"{intra['Close'].iloc[-1]:,.0f}円",
+                  f"{(intra['Close'].iloc[-1]/intra['Open'].iloc[0]-1)*100:+.2f}%")
+        st.plotly_chart(fig, use_container_width=True)
+        st.caption("※ 時間足はテクニカル指標・シグナルの対象外です（日足ベースで算出）")
 
-# RSI
-fig.add_trace(go.Scatter(x=df.index, y=df["RSI"], name="RSI",
-                         line=dict(color="#e91e63", width=1.5)), row=2, col=1)
-fig.add_hline(y=70, line_dash="dash", line_color="red", opacity=0.5, row=2, col=1)
-fig.add_hline(y=30, line_dash="dash", line_color="green", opacity=0.5, row=2, col=1)
-fig.add_hline(y=50, line_dash="dot", line_color="gray", opacity=0.3, row=2, col=1)
+else:
+    # Daily chart
+    rows = 3 if show_volume else 2
+    row_heights = [0.55, 0.22, 0.23] if show_volume else [0.65, 0.35]
+    subplot_titles = ["ローソク足 + テクニカル", "RSI / MACD"] + (["出来高"] if show_volume else [])
 
-# MACD histogram on same panel (secondary y would complicate things; use bar)
-fig.add_trace(go.Bar(
-    x=df.index, y=df["MACD_hist"], name="MACDヒスト",
-    marker_color=np.where(df["MACD_hist"] >= 0, "rgba(38,166,154,0.5)", "rgba(239,83,80,0.5)"),
-), row=2, col=1)
+    fig = make_subplots(
+        rows=rows, cols=1,
+        shared_xaxes=True,
+        row_heights=row_heights,
+        vertical_spacing=0.03,
+        subplot_titles=subplot_titles,
+    )
 
-# Volume
-if show_volume:
-    colors = ["#26a69a" if r >= 0 else "#ef5350" for r in df["Return"]]
-    fig.add_trace(go.Bar(x=df.index, y=df["Volume"], name="出来高",
-                         marker_color=colors, opacity=0.7), row=3, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df["Vol_MA20"], name="出来高MA20",
-                             line=dict(color="orange", width=1)), row=3, col=1)
+    fig.add_trace(go.Candlestick(
+        x=df.index, open=df["Open"], high=df["High"],
+        low=df["Low"], close=df["Close"],
+        name="ローソク足",
+        increasing_line_color="#26a69a",
+        decreasing_line_color="#ef5350",
+    ), row=1, col=1)
 
-view_days = {"1w": 7, "1mo": 31, "3mo": 93, "6mo": 186, "1y": 365, "2y": 730}
-chart_end = df.index[-1] + pd.Timedelta(days=2)
-chart_start = df.index[-1] - pd.Timedelta(days=view_days[view_period])
+    ma_colors = {"MA5": "#ff9800", "MA25": "#2196f3", "MA75": "#9c27b0"}
+    for ma in show_ma:
+        fig.add_trace(go.Scatter(x=df.index, y=df[ma], name=ma,
+                                 line=dict(color=ma_colors[ma], width=1.2)), row=1, col=1)
 
-fig.update_layout(
-    height=750,
-    xaxis_rangeslider_visible=False,
-    template="plotly_dark",
-    legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1),
-    margin=dict(l=50, r=20, t=30, b=20),
-    xaxis=dict(range=[chart_start, chart_end]),
-)
-fig.update_yaxes(title_text="株価 (円)", row=1, col=1)
-fig.update_yaxes(title_text="RSI / MACD", row=2, col=1)
-if show_volume:
-    fig.update_yaxes(title_text="出来高", row=3, col=1)
+    if show_bb:
+        fig.add_trace(go.Scatter(x=df.index, y=df["BB_upper"], name="BB上限",
+                                 line=dict(color="rgba(150,150,150,0.6)", width=1, dash="dot"),
+                                 showlegend=True), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df["BB_lower"], name="BB下限",
+                                 line=dict(color="rgba(150,150,150,0.6)", width=1, dash="dot"),
+                                 fill="tonexty", fillcolor="rgba(150,150,150,0.05)",
+                                 showlegend=True), row=1, col=1)
 
-st.plotly_chart(fig, use_container_width=True)
+    buy_days = df[df["signal"] == 1]
+    sell_days = df[df["signal"] == -1]
+    fig.add_trace(go.Scatter(
+        x=buy_days.index, y=buy_days["Low"] * 0.985,
+        mode="markers", name="買いシグナル",
+        marker=dict(symbol="triangle-up", size=10, color="lime", line=dict(color="green", width=1)),
+    ), row=1, col=1)
+    fig.add_trace(go.Scatter(
+        x=sell_days.index, y=sell_days["High"] * 1.015,
+        mode="markers", name="売りシグナル",
+        marker=dict(symbol="triangle-down", size=10, color="red", line=dict(color="darkred", width=1)),
+    ), row=1, col=1)
+
+    fig.add_trace(go.Scatter(x=df.index, y=df["RSI"], name="RSI",
+                             line=dict(color="#e91e63", width=1.5)), row=2, col=1)
+    fig.add_hline(y=70, line_dash="dash", line_color="red", opacity=0.5, row=2, col=1)
+    fig.add_hline(y=30, line_dash="dash", line_color="green", opacity=0.5, row=2, col=1)
+    fig.add_hline(y=50, line_dash="dot", line_color="gray", opacity=0.3, row=2, col=1)
+
+    fig.add_trace(go.Bar(
+        x=df.index, y=df["MACD_hist"], name="MACDヒスト",
+        marker_color=np.where(df["MACD_hist"] >= 0, "rgba(38,166,154,0.5)", "rgba(239,83,80,0.5)"),
+    ), row=2, col=1)
+
+    if show_volume:
+        colors = ["#26a69a" if r >= 0 else "#ef5350" for r in df["Return"]]
+        fig.add_trace(go.Bar(x=df.index, y=df["Volume"], name="出来高",
+                             marker_color=colors, opacity=0.7), row=3, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df["Vol_MA20"], name="出来高MA20",
+                                 line=dict(color="orange", width=1)), row=3, col=1)
+
+    view_days = {"1w": 7, "1mo": 31, "3mo": 93, "6mo": 186, "1y": 365, "2y": 730}
+    chart_end = df.index[-1] + pd.Timedelta(days=2)
+    chart_start = df.index[-1] - pd.Timedelta(days=view_days[view_period])
+
+    fig.update_layout(
+        height=750,
+        xaxis_rangeslider_visible=False,
+        template="plotly_dark",
+        legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1),
+        margin=dict(l=50, r=20, t=30, b=20),
+        xaxis=dict(range=[chart_start, chart_end]),
+    )
+    fig.update_yaxes(title_text="株価 (円)", row=1, col=1)
+    fig.update_yaxes(title_text="RSI / MACD", row=2, col=1)
+    if show_volume:
+        fig.update_yaxes(title_text="出来高", row=3, col=1)
+
+    st.plotly_chart(fig, use_container_width=True)
 
 # ── Signal Detail ─────────────────────────────────────────────
 st.subheader("シグナル詳細")
