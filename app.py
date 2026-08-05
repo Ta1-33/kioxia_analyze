@@ -91,11 +91,13 @@ month_chg_pct = month_chg_yen / month_base * 100
 sig_map = {1: ("🟢 買い", "green"), -1: ("🔴 売り", "red"), 0: ("⚪ 様子見", "gray")}
 sig_label, sig_color = sig_map[int(latest["signal"])]
 
-col1, col2, col3, col4, col5, col6 = st.columns(6)
+col1, col2, col3 = st.columns(3)
 col1.metric("現在値 (円)", f"{latest['Close']:,.0f}",
             f"{price_chg_yen:+,.0f}円 ({price_chg_pct:+.2f}%)")
 col2.metric("週間変化", f"{week_chg_yen:+,.0f}円", f"{week_chg_pct:+.2f}%")
 col3.metric("月間変化", f"{month_chg_yen:+,.0f}円", f"{month_chg_pct:+.2f}%")
+
+col4, col5, col6 = st.columns(3)
 col4.metric("RSI", f"{latest['RSI']:.1f}")
 col5.metric("ML精度", f"{ml_acc*100:.1f}%")
 col6.metric("総合シグナル", sig_label)
