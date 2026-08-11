@@ -48,6 +48,16 @@ with st.sidebar:
             "6mo": "6ヶ月", "1y": "1年", "2y": "2年（全期間）",
         }[x],
     )
+    if view_period == "1d":
+        intraday_interval = st.selectbox(
+            "足種",
+            options=["5m", "15m", "30m", "1h"],
+            index=1,
+            format_func=lambda x: {"5m": "5分足", "15m": "15分足", "30m": "30分足", "1h": "1時間足"}[x],
+        )
+    else:
+        intraday_interval = "1h"
+
     show_ma = st.multiselect(
         "移動平均線",
         options=["MA5", "MA25", "MA75"],
@@ -108,7 +118,7 @@ st.markdown("---")
 if view_period == "1d":
     # Intraday (hourly) chart
     with st.spinner("時間足データ取得中..."):
-        intra = fetch_intraday()
+        intra = fetch_intraday(intraday_interval)
 
     if intra.empty:
         st.warning("本日の時間足データを取得できませんでした（市場閉場中の可能性があります）。")
@@ -116,7 +126,8 @@ if view_period == "1d":
         trade_date = intra.index[0].strftime("%Y-%m-%d")
         intra_rows = 2 if show_volume else 1
         intra_heights = [0.65, 0.35] if show_volume else [1.0]
-        intra_titles = [f"時間足チャート ({trade_date})"] + (["出来高"] if show_volume else [])
+        interval_label = {"5m": "5分足", "15m": "15分足", "30m": "30分足", "1h": "1時間足"}[intraday_interval]
+        intra_titles = [f"{interval_label}チャート ({trade_date})"] + (["出来高"] if show_volume else [])
 
         fig = make_subplots(
             rows=intra_rows, cols=1,
