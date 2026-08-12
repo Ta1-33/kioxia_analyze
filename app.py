@@ -14,7 +14,7 @@ st.set_page_config(page_title="キオクシア 株価分析", layout="wide")
 def check_password() -> bool:
     def _verify():
         correct = st.secrets.get("password", "")
-        if hmac.compare_digest(st.session_state["pw_input"], correct):
+        if hmac.compare_digest(st.session_state["pw_input"].encode(), correct.encode()):
             st.session_state["authenticated"] = True
         else:
             st.session_state["auth_failed"] = True
