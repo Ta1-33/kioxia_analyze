@@ -74,12 +74,20 @@ with st.sidebar:
         format_func=lambda x: f"+{x}%",
     )
     st.markdown("---")
+    if st.button("データ更新", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
     st.caption("データ: Yahoo Finance (yfinance)")
 
 # ── Data ─────────────────────────────────────────────────────
-with st.spinner("データ取得中..."):
+@st.cache_data(ttl=1800, show_spinner=False)
+def load_data():
     raw = fetch_data("2y")
     df = compute_indicators(raw)
+    return raw, df
+
+with st.spinner("データ取得中..."):
+    raw, df = load_data()
     rule_sig, ml_sig, combined_sig, ml_acc, feat_imp = combined_signal(df)
     df["signal_rule"] = rule_sig
     df["signal_ml"] = ml_sig

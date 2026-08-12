@@ -152,7 +152,7 @@ def backtest_next_day(df: pd.DataFrame, retrain_interval: int = 21):
     model = None
     scaler = None
 
-    for i in range(min_train, len(data) - 1):
+    for i in range(min_train, len(data)):
         # Retrain periodically
         if model is None or (i - min_train) % retrain_interval == 0:
             X_tr = data.drop(columns="fwd").iloc[:i]
