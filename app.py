@@ -581,12 +581,17 @@ with tab4:
     st.plotly_chart(fig_eq, use_container_width=True)
 
     # Trade list
-    if bt_sig["trade_returns"]:
+    if bt_sig["trade_details"]:
         st.markdown("**取引別リターン**")
+        details = bt_sig["trade_details"]
         tr_df = pd.DataFrame({
-            "取引": [f"#{i+1}" for i in range(len(bt_sig["trade_returns"]))],
-            "リターン": [f"{r*100:+.2f}%" for r in bt_sig["trade_returns"]],
-            "結果": ["勝" if r > 0 else "負" for r in bt_sig["trade_returns"]],
+            "No.": [f"#{i+1}" for i in range(len(details))],
+            "買い日": [d["buy_date"].strftime("%Y-%m-%d") for d in details],
+            "買い値": [f"{d['buy_price']:,.0f}円" for d in details],
+            "売り日": [d["sell_date"].strftime("%Y-%m-%d") for d in details],
+            "売り値": [f"{d['sell_price']:,.0f}円" for d in details],
+            "リターン": [f"{d['ret']*100:+.2f}%" for d in details],
+            "結果": ["勝" if d["ret"] > 0 else "負" for d in details],
         })
         st.dataframe(tr_df, hide_index=True, use_container_width=True)
 

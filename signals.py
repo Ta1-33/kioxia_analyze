@@ -205,24 +205,42 @@ def backtest_signals(df: pd.DataFrame) -> dict:
     position = pd.Series(0.0, index=df.index)
     in_trade = False
     trade_returns = []
+    trade_details = []
     trade_start_price = None
+    trade_start_date = None
 
     for i in range(len(df)):
         s = sig.iloc[i]
         if not in_trade and s == 1:
             in_trade = True
             trade_start_price = close.iloc[i]
+            trade_start_date = df.index[i]
         elif in_trade and s == -1:
             in_trade = False
             trade_ret = close.iloc[i] / trade_start_price - 1
             trade_returns.append(trade_ret)
+            trade_details.append({
+                "buy_date": trade_start_date,
+                "sell_date": df.index[i],
+                "buy_price": trade_start_price,
+                "sell_price": close.iloc[i],
+                "ret": trade_ret,
+            })
             trade_start_price = None
+            trade_start_date = None
         position.iloc[i] = 1.0 if in_trade else 0.0
 
     # Close open trade at end
     if in_trade:
         trade_ret = close.iloc[-1] / trade_start_price - 1
         trade_returns.append(trade_ret)
+        trade_details.append({
+            "buy_date": trade_start_date,
+            "sell_date": df.index[-1],
+            "buy_price": trade_start_price,
+            "sell_price": close.iloc[-1],
+            "ret": trade_ret,
+        })
 
     strategy_ret = (position.shift(1).fillna(0) * daily_ret)
     bh_ret = daily_ret
@@ -259,6 +277,7 @@ def backtest_signals(df: pd.DataFrame) -> dict:
         "max_dd": max_dd,
         "sharpe": sharpe,
         "trade_returns": trade_returns,
+        "trade_details": trade_details,
     }
 
 
