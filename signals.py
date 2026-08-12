@@ -118,18 +118,19 @@ def predict_next_day(df: pd.DataFrame):
 
     X_pred = scaler.transform(latest_feats)
 
-    # Use individual tree predictions for confidence interval
     tree_preds = np.array([tree.predict(X_pred)[0] for tree in model.estimators_])
     pred_return = float(tree_preds.mean())
-    pred_std = float(tree_preds.std())
 
     current_price = float(df["Close"].iloc[-1])
+    pred_price = current_price * (1 + pred_return)
+    atr = float(df["ATR"].iloc[-1]) if "ATR" in df.columns and not np.isnan(df["ATR"].iloc[-1]) else current_price * 0.02
+
     return {
         "pred_return": pred_return,
-        "pred_price": current_price * (1 + pred_return),
-        "pred_high": current_price * (1 + pred_return + pred_std),
-        "pred_low": current_price * (1 + pred_return - pred_std),
-        "pred_std": pred_std,
+        "pred_price": pred_price,
+        "pred_high": pred_price + atr,
+        "pred_low": pred_price - atr,
+        "atr": atr,
         "current_price": current_price,
     }
 
@@ -164,14 +165,14 @@ def backtest_next_day(df: pd.DataFrame, retrain_interval: int = 21):
         X_pred = scaler.transform(data.drop(columns="fwd").iloc[[i]])
         tree_preds = np.array([t.predict(X_pred)[0] for t in model.estimators_])
         pred_ret = float(tree_preds.mean())
-        pred_std = float(tree_preds.std())
 
         date = data.index[i]
         actual_ret = float(data["fwd"].iloc[i])
         actual_price = float(df.loc[date, "Close"])
         pred_price = actual_price * (1 + pred_ret)
-        pred_high = actual_price * (1 + pred_ret + pred_std)
-        pred_low = actual_price * (1 + pred_ret - pred_std)
+        atr = float(df.loc[date, "ATR"]) if "ATR" in df.columns and not np.isnan(df.loc[date, "ATR"]) else actual_price * 0.02
+        pred_high = pred_price + atr
+        pred_low = pred_price - atr
         next_idx = df.index.get_loc(date) + 1
         next_actual_price = float(df["Close"].iloc[next_idx])
         next_actual_high = float(df["High"].iloc[next_idx])

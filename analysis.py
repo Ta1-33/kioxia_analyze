@@ -62,6 +62,13 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df["MACD_signal"] = df["MACD"].ewm(span=9, adjust=False).mean()
     df["MACD_hist"] = df["MACD"] - df["MACD_signal"]
 
+    # ATR (Average True Range, 14-day)
+    high_low = df["High"] - df["Low"]
+    high_pc = (df["High"] - close.shift(1)).abs()
+    low_pc = (df["Low"] - close.shift(1)).abs()
+    true_range = pd.concat([high_low, high_pc, low_pc], axis=1).max(axis=1)
+    df["ATR"] = true_range.rolling(14).mean()
+
     # Volume MA
     df["Vol_MA20"] = df["Volume"].rolling(20).mean()
 
