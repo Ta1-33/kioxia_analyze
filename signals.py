@@ -162,21 +162,28 @@ def backtest_next_day(df: pd.DataFrame, retrain_interval: int = 21):
             model.fit(X_scaled, y_tr)
 
         X_pred = scaler.transform(data.drop(columns="fwd").iloc[[i]])
-        pred_ret = float(model.predict(X_pred)[0])
+        tree_preds = np.array([t.predict(X_pred)[0] for t in model.estimators_])
+        pred_ret = float(tree_preds.mean())
+        pred_std = float(tree_preds.std())
 
         date = data.index[i]
         actual_ret = float(data["fwd"].iloc[i])
         actual_price = float(df.loc[date, "Close"])
         pred_price = actual_price * (1 + pred_ret)
+        pred_high = actual_price * (1 + pred_ret + pred_std)
+        pred_low = actual_price * (1 + pred_ret - pred_std)
         next_actual_price = float(df["Close"].iloc[df.index.get_loc(date) + 1])
 
         records.append({
             "date": date,
             "actual_price": next_actual_price,
             "pred_price": pred_price,
+            "pred_high": pred_high,
+            "pred_low": pred_low,
             "actual_return": actual_ret * 100,
             "pred_return": pred_ret * 100,
             "correct_direction": (pred_ret > 0) == (actual_ret > 0),
+            "in_range": pred_low <= next_actual_price <= pred_high,
         })
 
     result = pd.DataFrame(records).set_index("date")
