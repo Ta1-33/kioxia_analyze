@@ -687,6 +687,86 @@ with tab3:
                 use_container_width=True,
             )
 
+        # ── 総評テキスト ──────────────────────────────────────
+        st.markdown("---")
+        st.markdown("### 総評")
+
+        summary_lines = []
+
+        # レンジ的中率
+        in_range_pct = bt["in_range"].mean() * 100
+        if in_range_pct >= 70:
+            summary_lines.append(f"レンジ内的中率は **{in_range_pct:.1f}%** と良好な水準です。")
+        elif in_range_pct >= 55:
+            summary_lines.append(f"レンジ内的中率は **{in_range_pct:.1f}%** とまずまずの水準です。")
+        else:
+            summary_lines.append(f"レンジ内的中率は **{in_range_pct:.1f}%** とやや低く、改善余地があります。")
+
+        # 方向一致率
+        if dir_acc >= 60:
+            summary_lines.append(f"翌日の方向一致率は **{dir_acc:.1f}%** で、ランダム（50%）を上回る予測精度があります。")
+        elif dir_acc >= 50:
+            summary_lines.append(f"翌日の方向一致率は **{dir_acc:.1f}%** でランダムに近く、上昇・下落の方向予測は難しい状況です。")
+        else:
+            summary_lines.append(f"翌日の方向一致率は **{dir_acc:.1f}%** とランダム以下で、方向予測の信頼性は低いです。")
+
+        # 上抜け・下抜けのバイアス
+        if len(miss) > 0:
+            miss_tmp = miss.copy()
+            miss_tmp["上抜け"] = miss_tmp["actual_price"] > miss_tmp["pred_high"]
+            n_above = int(miss_tmp["上抜け"].sum())
+            n_below = int((~miss_tmp["上抜け"]).sum())
+            if n_above > n_below * 1.5:
+                summary_lines.append(
+                    f"外れた {len(miss)} 日のうち上抜けが {n_above} 日と多く、"
+                    "モデルが実際より保守的（安値寄り）に予測する傾向があります。"
+                )
+            elif n_below > n_above * 1.5:
+                summary_lines.append(
+                    f"外れた {len(miss)} 日のうち下抜けが {n_below} 日と多く、"
+                    "モデルが実際より強気（高値寄り）に予測する傾向があります。"
+                )
+            else:
+                summary_lines.append(
+                    f"外れた {len(miss)} 日は上抜け {n_above} 日・下抜け {n_below} 日とほぼ均等で、"
+                    "予測に上下バイアスはほとんどありません。"
+                )
+
+            # ATR（ボラティリティ）の影響
+            atr_hit = df.loc[df.index.isin(hit.index), "ATR"].mean()
+            atr_miss_val = df.loc[df.index.isin(miss.index), "ATR"].mean()
+            if atr_miss_val > atr_hit * 1.15:
+                summary_lines.append(
+                    f"×の日のATR平均（{atr_miss_val:,.0f}円）は○の日（{atr_hit:,.0f}円）より高く、"
+                    "**高ボラティリティの局面でレンジを外しやすい**傾向があります。"
+                )
+            else:
+                summary_lines.append(
+                    f"×の日と○の日でATRに大きな差はなく（{atr_miss_val:,.0f}円 vs {atr_hit:,.0f}円）、"
+                    "ボラティリティの高低だけでは外れを説明しにくい状況です。"
+                )
+
+            # 出来高の影響
+            vol_hit = (df.loc[df.index.isin(hit.index), "Volume"] / df.loc[df.index.isin(hit.index), "Vol_MA20"]).mean()
+            vol_miss_val = (df.loc[df.index.isin(miss.index), "Volume"] / df.loc[df.index.isin(miss.index), "Vol_MA20"]).mean()
+            if vol_miss_val > vol_hit * 1.2:
+                summary_lines.append(
+                    f"×の日の出来高は平均の **{vol_miss_val:.1f}倍** と○の日（{vol_hit:.1f}倍）を大きく上回り、"
+                    "大商いの日は急激な値動きでレンジを超えやすいと考えられます。"
+                )
+
+            # 実際リターンの絶対値
+            ret_miss = miss["actual_return"].abs().mean()
+            ret_hit = hit["actual_return"].abs().mean()
+            if ret_miss > ret_hit * 1.5:
+                summary_lines.append(
+                    f"×の日の平均値動き（{ret_miss:.1f}%）は○の日（{ret_hit:.1f}%）の "
+                    f"{ret_miss/ret_hit:.1f}倍で、急騰・急落時にレンジを超えやすいことがわかります。"
+                )
+
+        for line in summary_lines:
+            st.markdown(f"- {line}")
+
 with tab4:
     with st.spinner("シグナルバックテスト計算中..."):
         bt_sig = backtest_signals(df)
