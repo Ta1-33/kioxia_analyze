@@ -535,6 +535,21 @@ with tab3:
             f"({len(bt)}営業日) ／ 21営業日ごとに再学習するwalk-forward方式"
         )
 
+        st.markdown("---")
+        st.markdown("**日次一覧**")
+        bt_table = bt.copy()
+        bt_table.index = bt_table.index.strftime("%Y-%m-%d")
+        bt_table["誤差"] = bt_table["actual_price"] - bt_table["pred_price"]
+        bt_table["方向"] = bt_table["correct_direction"].map({True: "⭕", False: "❌"})
+        bt_table = bt_table[["actual_price", "pred_price", "誤差", "actual_return", "pred_return", "方向"]].copy()
+        bt_table.columns = ["実際の価格 (円)", "予測価格 (円)", "誤差 (円)", "実際リターン (%)", "予測リターン (%)", "方向"]
+        bt_table["実際の価格 (円)"] = bt_table["実際の価格 (円)"].map("{:,.0f}".format)
+        bt_table["予測価格 (円)"] = bt_table["予測価格 (円)"].map("{:,.0f}".format)
+        bt_table["誤差 (円)"] = bt_table["誤差 (円)"].map("{:+,.0f}".format)
+        bt_table["実際リターン (%)"] = bt_table["実際リターン (%)"].map("{:+.2f}%".format)
+        bt_table["予測リターン (%)"] = bt_table["予測リターン (%)"].map("{:+.2f}%".format)
+        st.dataframe(bt_table.iloc[::-1], use_container_width=True)
+
 with tab4:
     with st.spinner("シグナルバックテスト計算中..."):
         bt_sig = backtest_signals(df)
