@@ -568,6 +568,125 @@ with tab3:
         bt_table["予測リターン"] = bt_table["予測リターン"].map("{:+.2f}%".format)
         st.dataframe(bt_table.iloc[::-1], use_container_width=True)
 
+        # ── レンジ外れ分析 ──────────────────────────────────────
+        miss = bt[bt["in_range"] == False].copy()
+        hit = bt[bt["in_range"] == True].copy()
+
+        if len(miss) > 0:
+            st.markdown("---")
+            st.markdown("### レンジ外れ（×）の分析")
+
+            # 上抜け / 下抜け 内訳
+            miss["上抜け"] = miss["actual_price"] > miss["pred_high"]
+            n_above = int(miss["上抜け"].sum())
+            n_below = int((~miss["上抜け"]).sum())
+
+            # はみ出し幅
+            overshoot = miss.apply(
+                lambda r: r["actual_price"] - r["pred_high"] if r["actual_price"] > r["pred_high"]
+                          else r["pred_low"] - r["actual_price"],
+                axis=1
+            )
+            miss["はみ出し幅"] = overshoot
+
+            ca, cb, cc = st.columns(3)
+            ca.metric("×の日数", f"{len(miss)}日")
+            cb.metric("上抜け / 下抜け", f"{n_above}日 / {n_below}日")
+            cc.metric("平均はみ出し幅", f"{overshoot.mean():,.0f}円　(最大 {overshoot.max():,.0f}円)")
+
+            col_pie, col_bar = st.columns(2)
+
+            with col_pie:
+                fig_pie = go.Figure(go.Pie(
+                    labels=["上抜け (pred_high超)", "下抜け (pred_low割れ)"],
+                    values=[n_above, n_below],
+                    marker_colors=["#ef5350", "#42a5f5"],
+                    hole=0.4,
+                ))
+                fig_pie.update_layout(
+                    title="上抜け vs 下抜け",
+                    template="plotly_dark",
+                    height=300,
+                    margin=dict(l=10, r=10, t=40, b=10),
+                    showlegend=True,
+                )
+                st.plotly_chart(fig_pie, use_container_width=True)
+
+            with col_bar:
+                # はみ出し幅の分布
+                fig_ov = go.Figure(go.Histogram(
+                    x=overshoot,
+                    nbinsx=12,
+                    marker_color="#ff9800",
+                    opacity=0.8,
+                ))
+                fig_ov.update_layout(
+                    title="はみ出し幅の分布",
+                    template="plotly_dark",
+                    height=300,
+                    margin=dict(l=30, r=10, t=40, b=30),
+                    xaxis_title="はみ出し幅 (円)",
+                    yaxis_title="日数",
+                )
+                st.plotly_chart(fig_ov, use_container_width=True)
+
+            # 指標との関係: ×日 vs ○日 の比較
+            st.markdown("#### 指標別：○日 vs ×日 の平均値")
+            ind_cols = {
+                "RSI": "RSI",
+                "ATR": "ATR",
+                "出来高比 (Vol/MA20)": None,
+                "実際リターン絶対値 (%)": None,
+            }
+            miss_idx = miss.index
+            hit_idx = hit.index
+
+            def _ind_avg(idx, col):
+                vals = df.loc[df.index.isin(idx), col].dropna()
+                return vals.mean() if len(vals) > 0 else float("nan")
+
+            rows = []
+            rows.append({
+                "指標": "RSI",
+                "○日 平均": f"{_ind_avg(hit_idx, 'RSI'):.1f}",
+                "×日 平均": f"{_ind_avg(miss_idx, 'RSI'):.1f}",
+            })
+            rows.append({
+                "指標": "ATR (円)",
+                "○日 平均": f"{_ind_avg(hit_idx, 'ATR'):,.0f}",
+                "×日 平均": f"{_ind_avg(miss_idx, 'ATR'):,.0f}",
+            })
+            vol_hit = (df.loc[df.index.isin(hit_idx), "Volume"] / df.loc[df.index.isin(hit_idx), "Vol_MA20"]).mean()
+            vol_miss = (df.loc[df.index.isin(miss_idx), "Volume"] / df.loc[df.index.isin(miss_idx), "Vol_MA20"]).mean()
+            rows.append({
+                "指標": "出来高比 (Vol/MA20)",
+                "○日 平均": f"{vol_hit:.2f}x",
+                "×日 平均": f"{vol_miss:.2f}x",
+            })
+            ret_hit = bt.loc[hit_idx, "actual_return"].abs().mean()
+            ret_miss = bt.loc[miss_idx, "actual_return"].abs().mean()
+            rows.append({
+                "指標": "実際リターン絶対値 (%)",
+                "○日 平均": f"{ret_hit:.2f}%",
+                "×日 平均": f"{ret_miss:.2f}%",
+            })
+            st.dataframe(pd.DataFrame(rows).set_index("指標"), use_container_width=True)
+
+            # ×の日一覧
+            st.markdown("#### ×の日一覧")
+            miss_table = miss.copy()
+            miss_table.index = miss_table.index.strftime("%Y-%m-%d")
+            miss_table["方向"] = miss_table["上抜け"].map({True: "↑上抜け", False: "↓下抜け"})
+            miss_table["はみ出し"] = miss_table["はみ出し幅"].map("{:+,.0f}円".format)
+            miss_table["実際の終値"] = miss_table["actual_price"].map("{:,.0f}円".format)
+            miss_table["予想下限"] = miss_table["pred_low"].map("{:,.0f}円".format)
+            miss_table["予想上限"] = miss_table["pred_high"].map("{:,.0f}円".format)
+            miss_table["実際リターン"] = miss_table["actual_return"].map("{:+.2f}%".format)
+            st.dataframe(
+                miss_table[["実際の終値", "予想下限", "予想上限", "方向", "はみ出し", "実際リターン"]].iloc[::-1],
+                use_container_width=True,
+            )
+
 with tab4:
     with st.spinner("シグナルバックテスト計算中..."):
         bt_sig = backtest_signals(df)
