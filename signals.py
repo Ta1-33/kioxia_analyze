@@ -172,11 +172,16 @@ def backtest_next_day(df: pd.DataFrame, retrain_interval: int = 21):
         pred_price = actual_price * (1 + pred_ret)
         pred_high = actual_price * (1 + pred_ret + pred_std)
         pred_low = actual_price * (1 + pred_ret - pred_std)
-        next_actual_price = float(df["Close"].iloc[df.index.get_loc(date) + 1])
+        next_idx = df.index.get_loc(date) + 1
+        next_actual_price = float(df["Close"].iloc[next_idx])
+        next_actual_high = float(df["High"].iloc[next_idx])
+        next_actual_low = float(df["Low"].iloc[next_idx])
 
         records.append({
             "date": date,
             "actual_price": next_actual_price,
+            "actual_high": next_actual_high,
+            "actual_low": next_actual_low,
             "pred_price": pred_price,
             "pred_high": pred_high,
             "pred_low": pred_low,

@@ -544,14 +544,16 @@ with tab3:
         bt_table["方向"] = bt_table["correct_direction"].map({True: "⭕", False: "❌"})
         bt_table["レンジ内"] = bt_table["in_range"].map({True: "⭕", False: "❌"})
         bt_table = bt_table[[
-            "actual_price", "pred_price", "pred_low", "pred_high",
+            "actual_price", "actual_high", "actual_low",
+            "pred_price", "pred_low", "pred_high",
             "誤差", "actual_return", "pred_return", "方向", "レンジ内"
         ]].copy()
         bt_table.columns = [
-            "実際の価格", "予測価格", "予想下限", "予想上限",
+            "実際の終値", "実際の高値", "実際の安値",
+            "予測価格", "予想下限", "予想上限",
             "誤差", "実際リターン", "予測リターン", "方向", "レンジ内"
         ]
-        for col in ["実際の価格", "予測価格", "予想下限", "予想上限"]:
+        for col in ["実際の終値", "実際の高値", "実際の安値", "予測価格", "予想下限", "予想上限"]:
             bt_table[col] = bt_table[col].map("{:,.0f}円".format)
         bt_table["誤差"] = bt_table["誤差"].map("{:+,.0f}円".format)
         bt_table["実際リターン"] = bt_table["実際リターン"].map("{:+.2f}%".format)
